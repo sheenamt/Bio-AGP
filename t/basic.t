@@ -135,7 +135,7 @@ $_->{file} = File::Spec->catfile($testfiles_path,$_->{file}) foreach @agptests;
 use Test::More;
 use File::Temp qw/tempfile/;
 
-use_ok(  'CXGN::BioTools::AGP' , qw/ agp_parse agp_write agp_contigs / )
+use_ok(  'Bio::AGP::LowLevel' , qw/ agp_parse agp_write agp_contigs / )
     or BAIL_OUT('could not include the module being tested');
 
 

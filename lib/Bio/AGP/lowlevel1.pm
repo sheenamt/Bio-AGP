@@ -1,4 +1,4 @@
-package Bio::AGP::LowLevel;
+package CXGN::BioTools::AGP::LowLevel;
 use strict;
 use warnings;
 use English;
@@ -6,13 +6,17 @@ use Carp;
 
 use File::Basename;
 
-use CXGN::Tools::List qw/str_in/;
+use Bio::PrimarySeq;
+use Bio::Seq::LargePrimarySeq;
+use Bio::SeqFeature::Annotated;
 
+use CXGN::Tools::List qw/str_in/;
+use CXGN::Tools::Identifiers qw/identifier_namespace/;
 use CXGN::Tools::File qw/is_filehandle/;
 
 =head1 NAME
 
-Bio::AGP::LowLevel - functions for dealing with AGP files
+CXGN::BioTools::AGP - functions for dealing with AGP files
 
 =head1 SYNOPSIS
 
@@ -43,15 +47,17 @@ BEGIN {
   @EXPORT_OK = qw(
                   agp_parse
 
-                 
+                  agp_to_seq
+                  agp_to_seqs
 
                   agp_write
                   agp_format_part
 
                   agp_contigs
 
-                
-                  
+                  agp_contig_seq
+
+                  agp_to_features
                  );
 }
 
@@ -365,6 +371,232 @@ sub agp_contigs {
 }
 
 
+=head2 agp_contig_seq
+
+  Usage: my $seqs = agp_contig_seq($contig, %options);
+  Desc : given a contig arrayref like those returned by agp_contigs,
+         fetch the sequence
+  Args : a contig arrayref like [agp_file_line, agp_file_line, ...],
+         hash-style list of options like
+           fetch_<ns> => sub { }
+                          # function for fetching sequences
+                          # in namespace <ns> as returned by
+                          # CXGN::Tools::Identifiers::identifier_namespace
+                          # MANDATORY for each kind of identifier present
+                          #  in the agp file
+                          # takes 1 arg, the identifier string, returns
+                          # the sequence as a string
+                          # if fetch_default
+           lowercase   => 1,   #< force lower-case sequence,
+                                  defaults to force uppercase
+           pad_short_sequences => 0, #< if true, N-pad sequences that are too
+                                     #  short to cover a region in the
+                                     #  AGP file.  otherwise, die for
+                                     #  seqs that are too short.
+                                     #  default false.
+
+  Ret  : a string sequence (not a Bio::SeqI object)
+  Side Effects: calls the fetch_* functions you provide
+  Example:
+
+    #get the contigs for a chromosome
+    my %contigs = named_contigs(4);
+    #and now make all the consensus sequences
+    my %sequences;
+    while( my ($contig_name,$contig) = each(%contigs) ) {
+      $sequences{$contig_name} = consensus_sequence($contig);
+    }
+
+=cut
+
+sub agp_contig_seq {
+  my ($members,%opt) = @_;
+
+  my $seq = '';
+  foreach my $member (sort {$a->{ostart} <=> $b->{ostart}} @$members) {
+    my $comp_type = identifier_namespace($member->{ident}) || 'default';
+    my $fetch_func = $opt{"fetch_$comp_type"}
+      or croak "cannot fetch sequence for $member->{ident} in namespace $comp_type, please provide a fetch_$comp_type, or check that this is the correct namespace";
+    my $comp_seq = $fetch_func->($member->{ident})
+      or croak "failed to fetch sequence for '$member->{ident}'";
+
+    unless( length($comp_seq) >= $member->{cstart}-1+$member->{length}) {
+      if( $opt{pad_short_sequences} ) {
+	my $pad_length = ($member->{cstart}-1+$member->{length}) - length($comp_seq);
+	$comp_seq .= 'N'x$pad_length;
+      } else {
+	die "making object $member->{objname}: invalid coordinates (start $member->{cstart},length $member->{length}) for $member->{ident} (".length($comp_seq)." bases)";
+      }
+    }
+    $comp_seq = substr($comp_seq,$member->{cstart}-1,$member->{length});
+    if($member->{orient} eq '-') {
+      $comp_seq = Bio::PrimarySeq->new( -seq => $comp_seq, -id => 'foo')->revcom->seq;
+      # warn "revcom for $member->{ident}\n";
+    }
+    $seq .= $opt{lowercase} ? lc $comp_seq : uc $comp_seq;
+  }
+
+  return $seq;
+}
+
+
+=head2 agp_to_seqs
+
+  Usage: my $seq = agp_to_seq( $filename, %options );
+  Desc : parse an AGP file (or filehandle) and make a pseudomolecule sequence with
+         it, fetching sequences using the given subroutine(s)
+  Args : the AGP filename, plus hash-style options as:
+           lowercase   => 1,   #< force lower-case sequence,
+                                  defaults to force uppercase
+           no_seq_char => 'N', #< character to use to fill gaps
+           gap_length   => 0,  #< override to make all gaps this
+                                  length, defaults to 0, meaning
+                                  make gaps as big as the file
+                                  says
+           no_large_seqs => 0, #< don't use Bio::Seq::LargePrimarySeq
+                                  objects to hold object sequences.
+                                  If there are many short objects,
+                                  using LargePrimarySeq objects for
+                                  them can sometimes use up all the
+                                  system's file descriptors.
+           fetch_<ns> => sub { }
+                               #function for fetching sequences
+                               #in namespace <ns> as returned by
+                               #CXGN::Tools::Identifiers::identifier_namespace
+           pad_short_sequences => 0 # for sequences that are too
+                                    # short to cover the region
+                                    # specified in the AGP,
+                                    # pad with Ns if true,
+                                    # die if false.  default
+                                    # false (die)
+  Ret  : list of Bio::Seq::LargePrimarySeq objects
+  Side Effects: warns and dies on errors
+
+=cut
+
+sub agp_to_seqs {
+  my ($agpfile,%opt) = @_;
+  $opt{gap_length} ||= 0;
+  $opt{lowercase} ||= 0;
+  $opt{no_seq_char} ||= $opt{lowercase} ? 'n' : 'N';
+
+  my $agplines = agp_parse($agpfile)
+    or die "error parsing AGP file $agpfile\n";
+
+  my $seq_class =
+      $opt{no_large_seqs} ? 'Bio::PrimarySeq'
+                          : 'Bio::Seq::LargePrimarySeq';
+
+  my @seqs;
+
+  for my $line (@$agplines) {
+    next if exists $line->{comment}; #< skip comments
+
+    push @seqs, $seq_class->new( -id => $line->{objname} )
+        unless $seqs[-1] && $seqs[-1]->id eq $line->{objname};
+
+    my $seq_obj = $seqs[-1];
+
+    if ( $line->{typedesc} =~ /^(un)?known_gap$/ ) {
+        my $gap_size_to_use = $opt{gap_length} || $line->{length};
+        _add_sequence_as_string( $seq_obj, $opt{no_seq_char} x $gap_size_to_use );
+    } else {
+        _add_sequence_as_string( $seq_obj, agp_contig_seq([$line], %opt) );
+    }
+  }
+
+  return @seqs;
+}
+
+
+sub _add_sequence_as_string {
+    my ( $seq_obj, $additional_seq ) = @_;
+
+    if( $seq_obj->can('add_sequence_as_string') ) {
+        $seq_obj->add_sequence_as_string( $additional_seq );
+    } else {
+        my $s = $seq_obj->seq || '';
+        $seq_obj->seq( $s . $additional_seq );
+    }
+}
+
+=head2 agp_to_seq
+
+Like agp_to_seq, except only returns the first sequence in the AGP
+file.  Deprecated, but still exists for backward compatibility.
+
+=cut
+
+sub agp_to_seq {
+    ( shift->agp_to_seq(@_) )[0]
+}
+
+
+=head2 agp_to_features
+
+  Usage: my @features = agp_to_features( $agp_file );
+  Desc : parse the AGP file (or filehandle) and return it as a list of
+         features located on the object that's being
+         built
+  Args : AGP file name,
+         gap_type => feature type for gaps, default: gap,
+                     set undef to omit gap features
+         component_type => feature type for components, default: clone
+                        set undef to omit component features
+         source_name => name to use for 'source' column,
+                        default AGP,
+  Ret  : list of Bio::SeqFeature::Annotated objects
+  Side Effects: none
+
+=cut
+
+sub agp_to_features {
+  my ( $agp_file, %opts ) = @_;
+
+  # set defaults for options
+  $opts{source_name} ||= 'AGP';
+  $opts{gap_type}       = 'gap'   unless exists $opts{gap_type};
+  $opts{component_type} = 'clone' unless exists $opts{component_type};
+
+  my $parsed_agp = agp_parse( $agp_file )
+    or die "could not parse AGP file '$agp_file'";
+
+  my @features;
+  foreach my $line ( @$parsed_agp ) {
+    next if $line->{comment};
+
+    if( $line->{is_gap} && $opts{gap_type} ) {
+      push @features,
+	Bio::SeqFeature::Annotated->new( -start => $line->{ostart},
+					 -end   => $line->{oend},
+					 #-score => undef,
+					 -type  => $opts{gap_type},
+					 -source => $opts{source_name},
+					 -seq_id => $line->{objname},
+					 #-annots => { ID => $self->_unique_bio_annotation_id("${hname}_${fwdrev}_alignment"),
+					 #	   },
+				     );
+
+    } elsif( $opts{component_type} ) {
+      push @features,
+	Bio::SeqFeature::Annotated->new( -start => $line->{ostart},
+					 -end   => $line->{oend},
+					 #-score => undef,
+					 -type  => $opts{component_type},
+					 -source => $opts{source_name},
+					 -seq_id => $line->{objname},
+					 -target => { -start => $line->{cstart},
+						      -end   => $line->{cend},
+						      -target_id => $line->{ident},
+						    },
+					 #-annots => { ID => $self->_unique_bio_annotation_id("${hname}_${fwdrev}_alignment"),
+					 #	   },
+				       );
+    }
+  }
+
+  return @features;
+}
 
 =head1 AUTHOR(S)
 
