@@ -7,9 +7,7 @@ use Carp;
 use File::Basename;
 use UNIVERSAL qw/isa/;
 
-use CXGN::Tools::List qw/str_in/;
-
-##use CXGN::Tools::File qw/is_filehandle/;
+use List::Util qw/first/;
 
 =head1 NAME
 
@@ -68,7 +66,7 @@ BEGIN {
 
   I kept writing this over and over in validation code and got sick of it.
 
-
+=cut
 
 sub str_in {
   my $needle = shift;
