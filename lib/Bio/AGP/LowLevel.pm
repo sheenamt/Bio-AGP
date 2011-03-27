@@ -5,10 +5,11 @@ use English;
 use Carp;
 
 use File::Basename;
+use UNIVERSAL qw/isa/;
 
 use CXGN::Tools::List qw/str_in/;
 
-use CXGN::Tools::File qw/is_filehandle/;
+##use CXGN::Tools::File qw/is_filehandle/;
 
 =head1 NAME
 
@@ -53,6 +54,42 @@ BEGIN {
                 
                   
                  );
+}
+
+
+=head2 str_in
+
+  Usage: print "it's valid" if str_in($thingy,qw/foo bar baz/);
+  Desc : return 1 if the first argument is string equal to at least one of the
+         subsequent arguments
+  Ret  : 1 or 0
+  Args : string to search for, array of strings to search in
+  Side Effects: none
+
+  I kept writing this over and over in validation code and got sick of it.
+
+
+
+sub str_in {
+  my $needle = shift;
+  return defined(first {$needle eq $_} @_) ? 1 : 0;
+}
+
+=head2 is_filehandle
+
+  Usage: print "it's a filehandle" if is_filehandle($my_thing);
+  Desc : check whether the given thing is usable as a filehandle.
+         I put this in a module cause a filehandle might be either
+         a GLOB or isa IO::Handle or isa Apache::Upload
+  Ret  : true if it is a filehandle, false otherwise
+  Args : a single thing
+  Side Effects: none
+
+=cut
+
+sub is_filehandle {
+  my ($thing) = @_;
+  return isa($thing,'IO::Handle') || isa($thing,'Apache::Upload') || ref($thing) eq 'GLOB';
 }
 
 
@@ -363,8 +400,6 @@ sub agp_contigs {
   pop @contigs if @{$contigs[-1]} == 0;
   return @contigs;
 }
-
-
 
 =head1 AUTHOR(S)
 
