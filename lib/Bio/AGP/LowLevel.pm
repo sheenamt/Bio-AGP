@@ -6,7 +6,6 @@ use Carp;
 
 use File::Basename;
 use UNIVERSAL qw/isa/;
-
 use List::Util qw/first/;
 
 =head1 NAME
@@ -41,16 +40,9 @@ our @EXPORT_OK;
 BEGIN {
   @EXPORT_OK = qw(
                   agp_parse
-
-                 
-
                   agp_write
                   agp_format_part
-
-                  agp_contigs
-
-                
-                  
+                  agp_contigs                 
                  );
 }
 
