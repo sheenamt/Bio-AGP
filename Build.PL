@@ -1,10 +1,12 @@
 use Module::Build;
 my $build = Module::Build->new(
 
-    module_name        => 'LowLevel',
+    module_name        => 'Bio::AGP::LowLevel',
+    dist_author        => 'Robert Buels, Sheena Scroggins',
     dist_version       => '0.01',
     license            => 'perl',
     dist_abstract      => 'low-level functions for working with Accessioned Golden Path (AGP) files',
+    create_readme      => 1, 
     meta_merge         => {
         resources =>
           { repository => 'http://github.com/sheenams/Bio-AGP', },
@@ -12,11 +14,11 @@ my $build = Module::Build->new(
 
 
     requires           => {
-        'perl'                        => '5.8.0',
-        'Carp'                        => 0,
+        'perl'                  => '5.8.0',
+        'Carp'                  => 0,
 
-	'File::Basename'		=> 0,
-	'List::Util'			=> 0,
+	'File::Basename'	=> 0,
+	'List::Util'		=> 0,
 
     },
     build_requires => {
