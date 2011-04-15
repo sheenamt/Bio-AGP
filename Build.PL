@@ -15,16 +15,16 @@ my $build = Module::Build->new(
         'perl'                        => '5.8.0',
         'Carp'                        => 0,
 
-	'File::Basename'
-	'List::Util'
+	'File::Basename'		=> 0,
+	'List::Util'			=> 0,
 
     },
     build_requires => {
         
-	'FindBin'
-	'File::Basename'
-	'File::Spec'
-	'File::Temp' 
+	'FindBin'		=> 0,
+	'File::Basename'	=> 0,
+	'File::Spec'		=> 0,
+	'File::Temp' 		=> 0,
     },
 );
 $build->create_build_script;
